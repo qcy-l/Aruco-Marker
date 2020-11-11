@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(aruco_ros)
-
+set(OpenCV_DIR /home/tx2/software/opencv-3.4.10/build)
 find_package(OpenCV REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
