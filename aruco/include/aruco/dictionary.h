@@ -59,7 +59,7 @@ public:
   enum DICT_TYPES
     : uint64_t
     {
-      ARUCO_MIP_36h12 = 0x8, //*** recommended
+    ARUCO_MIP_36h12 = 0x8, //*** recommended
     ARUCO = 0x1, // original aruco dictionary. By default
     ARUCO_MIP_25h7 = 0x2, ARUCO_MIP_16h3 = 0x4, ARTAG = 0x10, //
     ARTOOLKITPLUS = 0x20, ARTOOLKITPLUSBCH = 0x40, //

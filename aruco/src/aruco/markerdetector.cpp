@@ -55,7 +55,7 @@ namespace aruco
  */
 MarkerDetector::MarkerDetector()
 {
-  markerIdDetector = aruco::MarkerLabeler::create(Dictionary::ALL_DICTS);
+  markerIdDetector = aruco::MarkerLabeler::create(Dictionary::DICT_TYPES::ALL_DICTS);
   setDetectionMode(DM_NORMAL);
 }
 
@@ -81,7 +81,6 @@ MarkerDetector::MarkerDetector(std::string dict_type, float error_correction_rat
 {
   setDictionary(dict_type, error_correction_rate);
   setDetectionMode(DM_NORMAL);
-
 }
 
 /**
@@ -150,10 +149,7 @@ std::vector<aruco::Marker> MarkerDetector::detect(const cv::Mat& input, const Ca
 }
 
 /**
- *
- *
- *
- *
+ * 
  */
 void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedMarkers, CameraParameters camParams,
                             float markerSizeMeters, bool setYPerpendicular, bool correctFisheye)
@@ -332,8 +328,8 @@ void MarkerDetector::thresholdAndDetectRectangles_thread()
       return;
     else if (tad.task == ERODE_TASK)
       erode = true;
-    _vcandidates[tad.outIdx] = thresholdAndDetectRectangles(_thres_Images[tad.inIdx], tad.param1, tad.param2, erode,
-                                                            _thres_Images[tad.outIdx]);
+    _vcandidates[tad.outIdx] = thresholdAndDetectRectangles(_thres_Images[tad.inIdx], tad.param1, tad.param2,
+                                                            erode, _thres_Images[tad.outIdx]);
 //    tev.add("thres param: "+to_string(tad.param1));
   }
 }
@@ -350,7 +346,8 @@ std::vector<aruco::MarkerDetector::MarkerCandidate> MarkerDetector::thresholdAnd
   std::size_t nimages = p1_values.size();
   _vcandidates.resize(nimages);
   _thres_Images.resize(nimages + 1);
-  _thres_Images.back() = image; // add at the end the original image
+  // add the original image at the end
+  _thres_Images.back() = image; 
 
   // first, thresholded images
   ThresAndDetectRectTASK tad;
@@ -376,7 +373,8 @@ std::vector<aruco::MarkerDetector::MarkerCandidate> MarkerDetector::thresholdAnd
 
   // how many threads will be used?
   int nthreads = 0;
-  if (_params.maxThreads <= 0) // if allowed to use all , take max()-1, since the buildpyramid must be working at this moment
+  // if allowed to use all , take max()-1, since the buildpyramid must be working at this moment
+  if (_params.maxThreads <= 0) 
     nthreads = std::thread::hardware_concurrency() - 1;
   else
     nthreads = std::max(1, _params.maxThreads - 1);
@@ -534,7 +532,7 @@ int Otsu(std::vector<float> &hist)
       mean0 /= w0;
       mean1 /= w1;
       float var = w0 * w1 * (mean0 - mean1) * (mean0 - mean1);
-//      std::cout << t << " : " << var << "|" << w0 << " " << w1 << " " << mean0 << " " << mean1 << std::endl;
+//    std::cout << t << " : " << var << "|" << w0 << " " << w1 << " " << mean0 << " " << mean1 << std::endl;
       if (var > maxVar)
       {
         maxVar = var;
@@ -575,7 +573,8 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
   // use the minimum and markerWarpSize to determine the optimal image size on which to do rectangle detection
   cv::Mat imgToBeThresHolded;
   cv::Size maxImageSize = grey.size();
-  auto minpixsize = getMinMarkerSizePix(input.size()); // min pixel size of the marker in the original image
+  // min pixel size of the marker in the original image
+  auto minpixsize = getMinMarkerSizePix(input.size()); 
   if (_params.lowResMarkerSize < minpixsize)
   {
     ResizeFactor = float(_params.lowResMarkerSize) / float(minpixsize);
@@ -590,7 +589,7 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
       if (maxImageSize.height % 2 != 0)
         maxImageSize.height++;
       cv::resize(grey, imgToBeThresHolded, maxImageSize, 0, 0, cv::INTER_NEAREST);
-//      cv::resize(grey, imgToBeThresHolded, maxImageSize, 0, 0, cv::INTER_LINEAR);
+//    cv::resize(grey, imgToBeThresHolded, maxImageSize, 0, 0, cv::INTER_LINEAR);
     }
   }
 
@@ -598,7 +597,9 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
     imgToBeThresHolded = grey;
 
   Timer.add("CreateImageToTheshold");
-  bool needPyramid = true; // ResizeFactor < 1/_params.pyrfactor; // only use pyramid if working on a big image.
+  bool needPyramid = true; 
+  // ResizeFactor < 1/_params.pyrfactor; // only use pyramid if working on a big image.
+  // *TODO USE CUDA HERE
   std::thread buildPyramidThread;
   if (needPyramid)
   {
@@ -695,7 +696,7 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
         // warping is one of the most time consuming operations, especially when the region is large.
         // To reduce computing time, let us find in the image pyramid, the best configuration to save time
 
-        // indicates how much bigger observation is wrt to desired patch
+        // indicates how much bigger observation is w.r.t to desired patch
         std::size_t imgPyrIdx = 0;
         for (std::size_t p = 1; p < imagePyramid.size(); p++)
         {
@@ -706,13 +707,13 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
         }
         inToWarp = imagePyramid[imgPyrIdx];
 
-        // move points to the image level p
+        // move points to the image level p in image pyramid
         float ratio = float(inToWarp.cols) / float(imgToBeThresHolded.cols);
         for (auto& p : points2d_pyr)
           p *= ratio; // 1. / std::pow(2, imgPyrIdx);
 
       }
-
+      // warp into canonical marker (extract the whole marker)
       warp(inToWarp, canonicalMarker, cv::Size(markerWarpSize, markerWarpSize), points2d_pyr);
       int id, nRotations;
       double min, Max;
@@ -730,6 +731,7 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
           cv::waitKey(0);
       );
 
+      // identify the marker and its rotation angle
       if (markerIdDetector->detect(canonicalMarkerAux, id, nRotations, additionalInfo))
       {
         detectedMarkers.push_back(MarkerCanditates[i]);

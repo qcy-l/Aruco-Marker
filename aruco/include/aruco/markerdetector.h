@@ -76,9 +76,10 @@ public:
 
     // border around image limits in which corners are not allowed to be detected. (0,1)
     float borderDistThres = 0.015f;
-    int lowResMarkerSize = 20; // minimum size of a marker in the low resolution image
+    // minimum size of a marker in the low resolution image
+    int lowResMarkerSize = 20; 
 
-    // minimum  size of a contour length. We use the following formula
+    // minimum size of a contour length. We use the following formula
     // minLenght = min(_minSize_pix, _minSize * Is) * 4
     // being Is = max(imageWidth, imageHeight)
     // the value _minSize are normalized, thus, depends on camera image size
@@ -115,7 +116,8 @@ public:
 
     // enable/disables the method for automatic size estimation for speed up
     bool _autoSize = false;
-    float _ts = 0.25f; // $\tau_s$ is a factor in the range $(0,1]$ that accounts for the camera motion speed. For instance, when $\tau_s=0.1$, it means that in the next frame, $\tau_i$ is such that markers $10\%$ smaller than the smallest marker in the current image  will be seek. To avoid loosing track of the markers. If no markers are detected in a frame, $\tau_i$ is set to zero for the next frame so that markers of any size can be detected.
+    float _ts = 0.25f; 
+    // $\tau_s$ is a factor in the range $(0,1]$ that accounts for the camera motion speed. For instance, when $\tau_s=0.1$, it means that in the next frame, $\tau_i$ is such that markers $10\%$ smaller than the smallest marker in the current image  will be seek. To avoid loosing track of the markers. If no markers are detected in a frame, $\tau_i$ is set to zero for the next frame so that markers of any size can be detected.
 
     /**
      * Enables automatic image resize according to elements detected in previous frame
