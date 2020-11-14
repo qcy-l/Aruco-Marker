@@ -71,6 +71,8 @@ private:
   std::string marker_frame;
   std::string camera_frame;
   std::string reference_frame;
+  std::string current_reference; // current reference frame for drones
+  std::string plan_target;
 
   bool start_detection;
   bool target_detected;
@@ -152,6 +154,8 @@ public:
     nh.param<std::string>("camera_frame", camera_frame, "");
     nh.param<std::string>("marker_frame", marker_frame, "");
     nh.param<bool>("image_is_rectified", useRectifiedImages, true);
+    nh.param<std::string>("current_reference", current_reference, "compensated_target");
+    nh.param<std::string>("plan_target", plan_target, "plan_target");
 
     ROS_ASSERT(camera_frame != "" && marker_frame != "");
 
@@ -323,6 +327,19 @@ public:
             visMarker.lifetime = ros::Duration(3.0);
             marker_pub.publish(visMarker);
 
+            // tf transform for drone control
+            tf::StampedTransform plan_targetTF;
+            plan_targetTF.setIdentity();
+            getTransform(plan_target, marker_frame, plan_targetTF);
+
+            tf::StampedTransform world_currentTF;
+            world_currentTF.setIdentity();
+            getTransform(reference_frame, current_reference, world_currentTF);
+
+            tf::Vector3 WorldPlanTrans =  world_currentTF.getOrigin() + plan_targetTF.getOrigin();
+            world_currentTF.setOrigin(WorldPlanTrans);
+            world_currentTF.child_frame_id_ = std::string("compensated_target");
+            br.sendTransform(world_currentTF);
           }
           // but drawing all the detected markers
           markers[i].draw(inImage, cv::Scalar(0, 0, 255), 2);
