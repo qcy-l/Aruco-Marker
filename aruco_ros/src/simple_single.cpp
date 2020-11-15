@@ -48,6 +48,7 @@
 
 #include <dynamic_reconfigure/server.h>
 #include <aruco_ros/ArucoThresholdConfig.h>
+#include "opencv2/video.hpp"
 
 class ArucoSimple
 {
@@ -71,10 +72,16 @@ private:
   std::string camera_frame;
   std::string reference_frame;
 
+  bool start_detection;
+  bool target_detected;
+
+  cv::KalmanFilter filter;
+
   double marker_size;
   int marker_id;
 
   ros::NodeHandle nh;
+  ros::NodeHandle global;
   image_transport::ImageTransport it;
   image_transport::Subscriber image_sub;
 
@@ -84,7 +91,9 @@ private:
 
 public:
   ArucoSimple() :
-      cam_info_received(false), nh("~"), it(nh)
+      cam_info_received(false), nh("~"), it(nh),
+      mDetector(aruco::Dictionary::ARUCO_MIP_16h3, 0.0),
+      filter(6, 6)
   {
 
     if (nh.hasParam("corner_refinement"))
@@ -112,6 +121,7 @@ public:
     float min_marker_size; // percentage of image area
     nh.param<float>("min_marker_size", min_marker_size, 0.02);
 
+    // setup detection mode
     std::string detection_mode;
     nh.param<std::string>("detection_mode", detection_mode, "DM_FAST");
     if (detection_mode == "DM_FAST")
@@ -153,6 +163,9 @@ public:
              marker_frame.c_str());
 
     dyn_rec_server.setCallback(boost::bind(&ArucoSimple::reconf_callback, this, _1, _2));
+
+    // initiate kalman filter
+    initKalmanFilter();
   }
 
   bool getTransform(const std::string& refFrame, const std::string& childFrame, tf::StampedTransform& transform)
@@ -182,6 +195,14 @@ public:
     return true;
   }
 
+  void initKalmanFilter(){
+    cv::setIdentity(filter.processNoiseCov, cv::Scalar::all(1e-4));
+    cv::setIdentity(filter.measurementNoiseCov, cv::Scalar::all(1e-4));
+    cv::setIdentity(filter.errorCovPost, cv::Scalar::all(1));
+    cv::setIdentity(filter.transitionMatrix, cv::Scalar::all(1));
+    cv::setIdentity(filter.measurementMatrix, cv::Scalar::all(1));
+  }
+
   void image_callback(const sensor_msgs::ImageConstPtr& msg)
   {
     if ((image_pub.getNumSubscribers() == 0) && (debug_pub.getNumSubscribers() == 0)
@@ -191,6 +212,12 @@ public:
     {
       ROS_DEBUG("No subscribers, not looking for ArUco markers");
       return;
+    }
+
+    global.param<bool>("/xdrone_vision/start_detection", start_detection, false);
+
+    if(!start_detection){
+        return;
     }
 
     static tf::TransformBroadcaster br;
@@ -207,6 +234,12 @@ public:
         markers.clear();
         // ok, let's detect
         mDetector.detect(inImage, markers, camParam, marker_size, false);
+
+        if(markers.size() == 0)
+            global.setParam("/xdrone_vision/target_detected", false);
+        else
+            global.setParam("/xdrone_vision/target_detected", true);  
+        
         // for each marker, draw info and its boundaries in the image
         for (std::size_t i = 0; i < markers.size(); ++i)
         {
@@ -222,12 +255,36 @@ public:
               getTransform(reference_frame, camera_frame, cameraToReference);
             }
 
-            transform = static_cast<tf::Transform>(cameraToReference) * static_cast<tf::Transform>(rightToLeft)
-                * transform;
+            transform = static_cast<tf::Transform>(cameraToReference) * static_cast<tf::Transform>(rightToLeft) * transform;
+                
+            filter.predict();
+            cv::Mat state(6, 1, CV_32F);
+            tf::Vector3 trans = transform.getOrigin();
+            tf::Quaternion rot = transform.getRotation();
+            tf::Matrix3x3 rot_matrix;
+            double yaw, roll, pitch;
+            rot_matrix.getRotation(rot);
+            state.at<float>(0, 0) = trans.x();
+            state.at<float>(1, 0) = trans.y();
+            state.at<float>(2, 0) = trans.z();
+            rot_matrix.getEulerYPR(yaw, roll, pitch);
+            state.at<float>(3, 0) = yaw;
+            state.at<float>(4, 0) = roll;
+            state.at<float>(5, 0) = pitch;
+            cv::Mat estimated = filter.correct(state);
 
-            tf::StampedTransform stampedTransform(transform, curr_stamp, reference_frame, marker_frame);
+            tf::Vector3 trans_estimated(estimated.at<float>(0), estimated.at<float>(1), estimated.at<float>(2));
+            tf::Quaternion rot_estimated;
+            rot_estimated.setEuler(estimated.at<float>(3), estimated.at<float>(4), estimated.at<float>(5));
+            tf::Transform estimated_transform;
+            estimated_transform.setOrigin(trans_estimated);
+            estimated_transform.setRotation(rot_estimated);
+
+            tf::StampedTransform stampedTransform(estimated_transform, curr_stamp, reference_frame, marker_frame);
             br.sendTransform(stampedTransform);
             geometry_msgs::PoseStamped poseMsg;
+
+            // convert the tf --> pose messages (debug use)
             tf::poseTFToMsg(transform, poseMsg.pose);
             poseMsg.header.frame_id = reference_frame;
             poseMsg.header.stamp = curr_stamp;
