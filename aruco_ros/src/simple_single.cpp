@@ -158,8 +158,8 @@ public:
     if (reference_frame.empty())
       reference_frame = camera_frame;
 
-    ROS_INFO("ArUco node started with marker size of %f m and marker id to track: %d", marker_size, marker_id);
-    ROS_INFO("ArUco node will publish pose to TF with %s as parent and %s as child.", reference_frame.c_str(),
+    ROS_WARN("ArUco node started with marker size of %f m and marker id to track: %d", marker_size, marker_id);
+    ROS_WARN("ArUco node will publish pose to TF with %s as parent and %s as child.", reference_frame.c_str(),
              marker_frame.c_str());
 
     dyn_rec_server.setCallback(boost::bind(&ArucoSimple::reconf_callback, this, _1, _2));
@@ -175,7 +175,7 @@ public:
     if (!_tfListener.waitForTransform(refFrame, childFrame, ros::Time(0), ros::Duration(0.5), ros::Duration(0.01),
                                       &errMsg))
     {
-      ROS_ERROR_STREAM("Unable to get pose from TF: " << errMsg);
+      ROS_INFO("Unable to get pose from TF: %s", errMsg);
       return false;
     }
     else
@@ -187,7 +187,7 @@ public:
       }
       catch (const tf::TransformException& e)
       {
-        ROS_ERROR_STREAM("Error in lookupTransform of " << childFrame << " in " << refFrame);
+        ROS_INFO("Error in lookupTransform of %s in %s", refFrame,childFrame);
         return false;
       }
 
@@ -273,13 +273,10 @@ public:
             state.at<float>(5, 0) = pitch;
             cv::Mat estimated = filter.correct(state);
 
-            tf::Vector3 trans_estimated(estimated.at<float>(0), estimated.at<float>(1), estimated.at<float>(2));
+            tf::Vector3 trans_estimated(static_cast<double>(estimated.at<float>(0)), static_cast<double>(estimated.at<float>(1)), static_cast<double>(estimated.at<float>(2)));
             tf::Quaternion rot_estimated;
-            rot_estimated.setEuler(estimated.at<float>(3), estimated.at<float>(4), estimated.at<float>(5));
-            tf::Transform estimated_transform;
-            estimated_transform.setOrigin(trans_estimated);
-            estimated_transform.setRotation(rot_estimated);
-
+            rot_estimated.setEuler(static_cast<double>(estimated.at<float>(3)), static_cast<double>(estimated.at<float>(4)), static_cast<double>(estimated.at<float>(5)));
+            tf::Transform estimated_transform(tf::Matrix3x3(rot_estimated), trans_estimated);
             tf::StampedTransform stampedTransform(estimated_transform, curr_stamp, reference_frame, marker_frame);
             br.sendTransform(stampedTransform);
             geometry_msgs::PoseStamped poseMsg;
