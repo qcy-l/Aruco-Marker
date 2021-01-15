@@ -334,6 +334,8 @@ void MarkerDetector::thresholdAndDetectRectangles_thread()
   }
 }
 
+
+// TODO: Use CUDA Here
 std::vector<aruco::MarkerDetector::MarkerCandidate> MarkerDetector::thresholdAndDetectRectangles(const cv::Mat &image)
 {
   // compute the different values of param1
@@ -385,15 +387,13 @@ std::vector<aruco::MarkerDetector::MarkerCandidate> MarkerDetector::thresholdAnd
 
   if (nthreads == 1)
   {
-    // no threads
-    ScopeTimer Timer("non-parallel");
+    
     thresholdAndDetectRectangles_thread();
   }
   else
   {
     // parallell mode
     // add the final task END
-    ScopeTimer Timer("parallel");
 
     // run the tasks (in parallel)
     std::vector<std::thread> threads;
@@ -554,7 +554,6 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
   detectedMarkers.clear();
   _vcandidates.clear();
   _candidates.clear();
-  ScopedTimerEvents Timer("detect");
 
   // it must be a 3 channel image
   if (input.type() == CV_8UC3)
@@ -562,7 +561,6 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
 //  convertToGray(input, grey);
   else
     grey = input;
-  Timer.add("ConvertGrey");
 
   /*****************************************************************
    * CREATE LOW RESOLUTION IMAGE IN WHICH MARKERS WILL BE DETECTED *
@@ -596,10 +594,9 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
   if (imgToBeThresHolded.empty()) // if not set in previous step, add original now
     imgToBeThresHolded = grey;
 
-  Timer.add("CreateImageToTheshold");
   bool needPyramid = true; 
   // ResizeFactor < 1/_params.pyrfactor; // only use pyramid if working on a big image.
-  // *TODO USE CUDA HERE
+  // TODO: USE CUDA HERE
   std::thread buildPyramidThread;
   if (needPyramid)
   {
@@ -610,7 +607,6 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
       });
     else
       buildPyramid(imagePyramid, grey, 2 * getMarkerWarpSize());
-    Timer.add("BuildPyramid");
   }
   else
   {
@@ -630,45 +626,10 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
     MarkerCanditates = thresholdAndDetectRectangles(imgToBeThresHolded);
     thres = _thres_Images[0];
 
-    _debug_exec(10,
-        {
-          // only executes when compiled in DEBUG mode if debug level is at least 10
-          // show the thresholded images
-          for (std::size_t i = 0; i < _thres_Images.size(); i++)
-          {
-            std::stringstream sstr; sstr << "thres-" << i;
-            cv::namedWindow(sstr.str(),cv::WINDOW_NORMAL);
-            cv::imshow(sstr.str(),_thres_Images[i]);
-          }
-        }
-    );
-
-    Timer.add("Threshold and Detect rectangles");
 
     // prefilter candidates
-    _debug_exec(10,
-        // only executes when compiled in DEBUG mode if debug level is at least 10
-        // show the thresholded images
-        cv::Mat imrect;
-        cv::cvtColor(imgToBeThresHolded, imrect, CV_GRAY2BGR);
-        for (auto m : MarkerCanditates)
-          m.draw(imrect, cv::Scalar(0, 245, 0));
-        cv::imshow("rect-nofiltered", imrect);
-    );
 
     MarkerCanditates = prefilterCandidates(MarkerCanditates, imgToBeThresHolded.size());
-
-    Timer.add("prefilterCandidates");
-
-    _debug_exec(10,
-        // only executes when compiled in DEBUG mode if debug level is at least 10
-        // show the thresholded images
-        cv::Mat imrect;
-        cv::cvtColor(imgToBeThresHolded, imrect, CV_GRAY2BGR);
-        for (auto m : MarkerCanditates)
-          m.draw(imrect, cv::Scalar(0, 245, 0));
-        cv::imshow("rect-filtered", imrect);
-    );
 
     // before going on, make sure the piramid is built
     if (buildPyramidThread.joinable())
@@ -721,16 +682,6 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
       canonicalMarker.copyTo(canonicalMarkerAux);
       std::string additionalInfo;
 
-      _debug_exec(10,
-          // only executes when compiled in DEBUG mode if debug level is at least 10
-          // show the thresholded images
-          std::stringstream sstr; sstr << "test-" << i;
-          std::cout << "test" << i << std::endl;
-          cv::namedWindow(sstr.str(), cv::WINDOW_NORMAL);
-          cv::imshow(sstr.str(), canonicalMarkerAux);
-          cv::waitKey(0);
-      );
-
       // identify the marker and its rotation angle
       if (markerIdDetector->detect(canonicalMarkerAux, id, nRotations, additionalInfo))
       {
@@ -741,21 +692,12 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
         // sort the points so that they are always in the same order no matter the camera orientation
         std::rotate(detectedMarkers.back().begin(), detectedMarkers.back().begin() + 4 - nRotations,
                     detectedMarkers.back().end());
-        _debug_exec(10,
-            // only executes when compiled in DEBUG mode if debug level is at least 10
-            // show the thresholded images
-            std::stringstream sstr; sstr << "can-" << detectedMarkers.back().id;
-            cv::namedWindow(sstr.str(), cv::WINDOW_NORMAL);
-            cv::imshow(sstr.str(), canonicalMarker);
-            std::cout << "ID=" << id << " " << detectedMarkers.back() << std::endl;
-        );
         if (_params._thresMethod == THRES_AUTO_FIXED)
           addToImageHist(canonicalMarker, hist);
         }
         else
           _candidates.push_back(MarkerCanditates[i]);
         }
-        Timer.add("Marker classification");
         if (detectedMarkers.size() == 0 && _params._thresMethod == THRES_AUTO_FIXED
             && ++nAttemptsAutoFix < _params.NAttemptsAutoThresFix)
         {
@@ -782,7 +724,6 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
       if (input.cols != imgToBeThresHolded.cols)
       {
         cornerUpsample(detectedMarkers, imgToBeThresHolded.size());
-        Timer.add("Corner Upsample");
       }
 
       /*********************************
@@ -802,7 +743,6 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
         for (unsigned int i = 0; i < detectedMarkers.size(); i++)
           for (int c = 0; c < 4; c++)
             detectedMarkers[i][c] = Corners[i * 4 + c];
-        Timer.add("Corner Refinement");
       }
 
       /*************************
@@ -842,7 +782,6 @@ void MarkerDetector::detect(const cv::Mat& input, std::vector<Marker>& detectedM
       {
         for (unsigned int i = 0; i < detectedMarkers.size(); i++)
           detectedMarkers[i].calculateExtrinsics(markerSizeMeters, camMatrix, distCoeff, extrinsics, setYPerpendicular, correctFisheye);
-        Timer.add("Pose Estimation");
       }
 
       // compute _markerMinSize

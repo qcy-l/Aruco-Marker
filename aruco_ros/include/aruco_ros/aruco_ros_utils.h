@@ -9,6 +9,8 @@
 #include <tf2/transform_datatypes.h>
 #include <visualization_msgs/Marker.h>
 
+#define ARUCO_DUBUG 0
+
 namespace aruco_ros
 {
 /**

@@ -48,6 +48,7 @@
 
 #include <dynamic_reconfigure/server.h>
 #include <aruco_ros/ArucoThresholdConfig.h>
+#include "aruco_ros/aruco_ros_utils.h"
 #include "opencv2/video.hpp"
 
 class ArucoSimple
@@ -288,6 +289,7 @@ public:
             br.sendTransform(stampedTransform);
             geometry_msgs::PoseStamped poseMsg;
 
+            #if ARUCO_DUBUG
             // convert the tf --> pose messages (debug use)
             tf::poseTFToMsg(transform, poseMsg.pose);
             poseMsg.header.frame_id = reference_frame;
@@ -326,6 +328,7 @@ public:
             visMarker.color.a = 1.0;
             visMarker.lifetime = ros::Duration(3.0);
             marker_pub.publish(visMarker);
+            #endif
 
             // tf transform for drone control
             tf::StampedTransform plan_targetTF;
