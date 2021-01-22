@@ -317,20 +317,14 @@ void MarkerDetector::thresholdAndDetectRectangles_thread()
 {
   while (true)
   {
-//    std::stringstream sstr;
-//    sstr << "thread-" << std::this_thread::get_id() << " "
-//        << std::chrono::high_resolution_clock::now().time_since_epoch().count();
-//    ScopedTimerEvents tev(sstr.str());
     bool erode = false;
     auto tad = _tasks.pop();
-//    tev.add("pop");
     if (tad.task == EXIT_TASK)
       return;
     else if (tad.task == ERODE_TASK)
       erode = true;
     _vcandidates[tad.outIdx] = thresholdAndDetectRectangles(_thres_Images[tad.inIdx], tad.param1, tad.param2,
                                                             erode, _thres_Images[tad.outIdx]);
-//    tev.add("thres param: "+to_string(tad.param1));
   }
 }
 

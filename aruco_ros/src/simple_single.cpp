@@ -79,6 +79,8 @@ private:
   bool target_detected;
 
   cv::KalmanFilter filter;
+  bool first_detection;
+  cv::Mat estimated 
 
   double marker_size;
   int marker_id;
@@ -96,7 +98,7 @@ public:
   ArucoSimple() :
       cam_info_received(false), nh("~"), it(nh),
       mDetector(aruco::Dictionary::ARUCO_MIP_16h3, 0.0),
-      filter(6, 6)
+      filter(6, 6), first_detection(true)
   {
 
     if (nh.hasParam("corner_refinement"))
@@ -202,8 +204,8 @@ public:
 
   void initKalmanFilter(){
     cv::setIdentity(filter.processNoiseCov, cv::Scalar::all(1e-4));
-    cv::setIdentity(filter.measurementNoiseCov, cv::Scalar::all(1e-4));
-    cv::setIdentity(filter.errorCovPost, cv::Scalar::all(1));
+    cv::setIdentity(filter.measurementNoiseCov, cv::Scalar::all(1e-3));
+    cv::setIdentity(filter.errorCovPost, cv::Scalar::all(1e-3));
     cv::setIdentity(filter.transitionMatrix, cv::Scalar::all(1));
     cv::setIdentity(filter.measurementMatrix, cv::Scalar::all(1));
   }
@@ -261,8 +263,8 @@ public:
             }
 
             transform = static_cast<tf::Transform>(cameraToReference) * static_cast<tf::Transform>(rightToLeft) * transform;
-                
-            filter.predict();
+
+            // compute state vector for kalman filter
             cv::Mat state(6, 1, CV_32F);
             tf::Vector3 trans = transform.getOrigin();
             tf::Quaternion rot = transform.getRotation();
@@ -276,7 +278,17 @@ public:
             state.at<float>(3, 0) = yaw;
             state.at<float>(4, 0) = roll;
             state.at<float>(5, 0) = pitch;
-            cv::Mat estimated = filter.correct(state);
+            
+            // first detection ot not?
+            if (first_detection){
+                state.copyTo(filter.statePost);
+                state.copyTo(estimated);
+                first_detection = false;
+            }
+            else{
+                filter.predict();
+                estimated = filter.correct(state);
+            }
 
             tf::Vector3 trans_estimated(estimated.at<float>(0), estimated.at<float>(1), estimated.at<float>(2));
             tf::Quaternion rot_estimated;
