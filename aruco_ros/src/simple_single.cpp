@@ -74,8 +74,8 @@ private:
   std::string current_reference; // current reference frame for drones
   std::string plan_target;
 
-  bool start_detection;
-  bool target_detected;
+  int start_detection;
+  int target_detected;
 
   cv::KalmanFilter filter;
 
@@ -150,12 +150,12 @@ public:
 
     nh.param<double>("marker_size", marker_size, 0.05);
     nh.param<int>("marker_id", marker_id, 300);
-    nh.param<std::string>("reference_frame", reference_frame, "");
-    nh.param<std::string>("camera_frame", camera_frame, "");
-    nh.param<std::string>("marker_frame", marker_frame, "");
+    nh.param<std::string>("reference_frame", reference_frame, ""); // world reference frame
+    nh.param<std::string>("camera_frame", camera_frame, ""); // camera frame
+    nh.param<std::string>("marker_frame", marker_frame, ""); // marker frame
     nh.param<bool>("image_is_rectified", useRectifiedImages, true);
-    nh.param<std::string>("current_reference", current_reference, "compensated_target");
-    nh.param<std::string>("plan_target", plan_target, "plan_target");
+    nh.param<std::string>("current_reference", current_reference, "");
+    nh.param<std::string>("plan_target", plan_target, "/plan_target");
 
     ROS_ASSERT(camera_frame != "" && marker_frame != "");
 
@@ -209,24 +209,28 @@ public:
 
   void image_callback(const sensor_msgs::ImageConstPtr& msg)
   {
-    if ((image_pub.getNumSubscribers() == 0) && (debug_pub.getNumSubscribers() == 0)
-        && (pose_pub.getNumSubscribers() == 0) && (transform_pub.getNumSubscribers() == 0)
-        && (position_pub.getNumSubscribers() == 0) && (marker_pub.getNumSubscribers() == 0)
-        && (pixel_pub.getNumSubscribers() == 0))
-    {
-      ROS_DEBUG("No subscribers, not looking for ArUco markers");
-      return;
-    }
+    // if ((image_pub.getNumSubscribers() == 0) && (debug_pub.getNumSubscribers() == 0)
+    //     && (pose_pub.getNumSubscribers() == 0) && (transform_pub.getNumSubscribers() == 0)
+    //     && (position_pub.getNumSubscribers() == 0) && (marker_pub.getNumSubscribers() == 0)
+    //     && (pixel_pub.getNumSubscribers() == 0))
+    // {
+    //   ROS_DEBUG("No subscribers, not looking for ArUco markers");
+    //   return;
+    // }
 
-    global.param<bool>("/xdrone_vision/start_detection", start_detection, false);
+    nh.getParam("/xdrone_vision/start_detection", start_detection);
 
     if(!start_detection){
+        ROS_WARN("Detection Parameter Not Set! IDLE");
+        ros::Duration(1).sleep();
         return;
     }
+    ROS_WARN("Start detection!");
 
     static tf::TransformBroadcaster br;
     if (cam_info_received)
     {
+      ROS_WARN("Cam receive!");
       ros::Time curr_stamp = msg->header.stamp;
       cv_bridge::CvImagePtr cv_ptr;
       try
@@ -237,6 +241,7 @@ public:
         // detection results will go into "markers"
         markers.clear();
         // ok, let's detect
+        ROS_WARN("START DETECT");
         mDetector.detect(inImage, markers, camParam, marker_size, false);
 
         if(markers.size() == 0)
@@ -247,9 +252,11 @@ public:
         // for each marker, draw info and its boundaries in the image
         for (std::size_t i = 0; i < markers.size(); ++i)
         {
+          ROS_WARN("Marker Detect & calculate TF!");
           // only publishing the selected marker
           if (markers[i].id == marker_id)
           {
+            ROS_WARN("Marker ID Match!");
             tf::Transform transform = aruco_ros::arucoMarker2Tf(markers[i]);
             tf::StampedTransform cameraToReference;
             cameraToReference.setIdentity();
@@ -261,30 +268,33 @@ public:
 
             transform = static_cast<tf::Transform>(cameraToReference) * static_cast<tf::Transform>(rightToLeft) * transform;
                 
-            filter.predict();
-            cv::Mat state(6, 1, CV_32F);
-            tf::Vector3 trans = transform.getOrigin();
-            tf::Quaternion rot = transform.getRotation();
-            tf::Matrix3x3 rot_matrix;
-            double yaw, roll, pitch;
-            rot_matrix.getRotation(rot);
-            state.at<float>(0, 0) = trans.x();
-            state.at<float>(1, 0) = trans.y();
-            state.at<float>(2, 0) = trans.z();
-            rot_matrix.getEulerYPR(yaw, roll, pitch);
-            state.at<float>(3, 0) = yaw;
-            state.at<float>(4, 0) = roll;
-            state.at<float>(5, 0) = pitch;
-            cv::Mat estimated = filter.correct(state);
+            // filter.predict();
+            // cv::Mat state(6, 1, CV_32F);
+            // tf::Vector3 trans = transform.getOrigin();
+            // ROS_WARN_STREAM("Without Filter X: "<< trans.x() << "Y :"<< trans.y() << "Z: "<< trans.y());
+            // tf::Quaternion rot = transform.getRotation();
+            // tf::Matrix3x3 rot_matrix;
+            // double yaw, roll, pitch;
+            // rot_matrix.getRotation(rot);
+            // state.at<float>(0, 0) = trans.x();
+            // state.at<float>(1, 0) = trans.y();
+            // state.at<float>(2, 0) = trans.z();
+            // rot_matrix.getEulerYPR(yaw, roll, pitch);
+            // state.at<float>(3, 0) = yaw;
+            // state.at<float>(4, 0) = roll;
+            // state.at<float>(5, 0) = pitch;
+            // cv::Mat estimated = filter.correct(state);
 
-            tf::Vector3 trans_estimated(estimated.at<float>(0), estimated.at<float>(1), estimated.at<float>(2));
-            tf::Quaternion rot_estimated;
-            rot_estimated.setEuler(estimated.at<float>(3), estimated.at<float>(4), estimated.at<float>(5));
-            tf::Transform estimated_transform;
-            estimated_transform.setOrigin(trans_estimated);
-            estimated_transform.setRotation(rot_estimated);
+            // ROS_WARN_STREAM("Filter X: "<< estimated.at<float>(0) << "Y :"<<estimated.at<float>(1) << "Z: "<< estimated.at<float>(2));
 
-            tf::StampedTransform stampedTransform(estimated_transform, curr_stamp, reference_frame, marker_frame);
+            // tf::Vector3 trans_estimated(estimated.at<float>(0), estimated.at<float>(1), estimated.at<float>(2));
+            // tf::Quaternion rot_estimated;
+            // rot_estimated.setEuler(estimated.at<float>(3), estimated.at<float>(4), estimated.at<float>(5));
+            // tf::Transform estimated_transform;
+            // estimated_transform.setOrigin(trans_estimated);
+            // estimated_transform.setRotation(rot_estimated);
+
+            tf::StampedTransform stampedTransform(transform, curr_stamp, reference_frame, marker_frame);
             br.sendTransform(stampedTransform);
             geometry_msgs::PoseStamped poseMsg;
 
@@ -328,18 +338,18 @@ public:
             marker_pub.publish(visMarker);
 
             // tf transform for drone control
-            tf::StampedTransform plan_targetTF;
-            plan_targetTF.setIdentity();
-            getTransform(plan_target, marker_frame, plan_targetTF);
+            // tf::StampedTransform plan_targetTF;
+            // plan_targetTF.setIdentity();
+            // getTransform(plan_target, marker_frame, plan_targetTF);
 
-            tf::StampedTransform world_currentTF;
-            world_currentTF.setIdentity();
-            getTransform(reference_frame, current_reference, world_currentTF);
+            // tf::StampedTransform world_currentTF;
+            // world_currentTF.setIdentity();
+            // getTransform(reference_frame, current_reference, world_currentTF);
 
-            tf::Vector3 WorldPlanTrans =  world_currentTF.getOrigin() + plan_targetTF.getOrigin();
-            world_currentTF.setOrigin(WorldPlanTrans);
-            world_currentTF.child_frame_id_ = std::string("compensated_target");
-            br.sendTransform(world_currentTF);
+            // tf::Vector3 WorldPlanTrans =  world_currentTF.getOrigin() + plan_targetTF.getOrigin();
+            // world_currentTF.setOrigin(WorldPlanTrans);
+            // world_currentTF.child_frame_id_ = std::string("compensated_target");
+            // br.sendTransform(world_currentTF);
           }
           // but drawing all the detected markers
           markers[i].draw(inImage, cv::Scalar(0, 0, 255), 2);
