@@ -80,7 +80,7 @@ private:
 
   cv::KalmanFilter filter;
   bool first_detection;
-  cv::Mat estimated 
+  cv::Mat estimated; 
 
   double marker_size;
   int marker_id;
@@ -357,9 +357,12 @@ public:
             br.sendTransform(world_currentTF);
           }
           // but drawing all the detected markers
+          #if ARUCO_DUBUG
           markers[i].draw(inImage, cv::Scalar(0, 0, 255), 2);
+          #endif
         }
 
+        #if ARUCO_DUBUG
         // draw a 3d cube in each marker if there is 3d info
         if (camParam.isValid() && marker_size != -1)
         {
@@ -388,6 +391,7 @@ public:
           debug_msg.image = mDetector.getThresholdedImage();
           debug_pub.publish(debug_msg.toImageMsg());
         }
+        #endif
       }
       catch (cv_bridge::Exception& e)
       {
