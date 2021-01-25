@@ -51,6 +51,8 @@
 #include "aruco_ros/aruco_ros_utils.h"
 #include "opencv2/video.hpp"
 
+int target_detected = 0;
+
 class ArucoSimple
 {
 private:
@@ -75,7 +77,7 @@ private:
   std::string current_reference; // current reference frame for drones
   std::string plan_target;
 
-  bool start_detection;
+  int start_detection;
   bool target_detected;
 
   cv::KalmanFilter filter;
@@ -157,16 +159,16 @@ public:
     nh.param<std::string>("camera_frame", camera_frame, "");
     nh.param<std::string>("marker_frame", marker_frame, "");
     nh.param<bool>("image_is_rectified", useRectifiedImages, true);
-    nh.param<std::string>("current_reference", current_reference, "compensated_target");
-    nh.param<std::string>("plan_target", plan_target, "plan_target");
+    nh.param<std::string>("current_reference", current_reference, "");
+    nh.param<std::string>("plan_target", plan_target, "/plan_target");
 
     ROS_ASSERT(camera_frame != "" && marker_frame != "");
 
     if (reference_frame.empty())
       reference_frame = camera_frame;
 
-    ROS_INFO("ArUco node started with marker size of %f m and marker id to track: %d", marker_size, marker_id);
-    ROS_INFO("ArUco node will publish pose to TF with %s as parent and %s as child.", reference_frame.c_str(),
+    ROS_WARN("ArUco node started with marker size of %f m and marker id to track: %d", marker_size, marker_id);
+    ROS_WARN("ArUco node will publish pose to TF with %s as parent and %s as child.", reference_frame.c_str(),
              marker_frame.c_str());
 
     dyn_rec_server.setCallback(boost::bind(&ArucoSimple::reconf_callback, this, _1, _2));
@@ -182,7 +184,7 @@ public:
     if (!_tfListener.waitForTransform(refFrame, childFrame, ros::Time(0), ros::Duration(0.5), ros::Duration(0.01),
                                       &errMsg))
     {
-      ROS_ERROR_STREAM("Unable to get pose from TF: " << errMsg);
+      ROS_INFO("Unable to get pose from TF: %s", errMsg);
       return false;
     }
     else
@@ -194,7 +196,7 @@ public:
       }
       catch (const tf::TransformException& e)
       {
-        ROS_ERROR_STREAM("Error in lookupTransform of " << childFrame << " in " << refFrame);
+        ROS_INFO("Error in lookupTransform of %s in %s", refFrame,childFrame);
         return false;
       }
 
@@ -212,16 +214,17 @@ public:
 
   void image_callback(const sensor_msgs::ImageConstPtr& msg)
   {
-    if ((image_pub.getNumSubscribers() == 0) && (debug_pub.getNumSubscribers() == 0)
-        && (pose_pub.getNumSubscribers() == 0) && (transform_pub.getNumSubscribers() == 0)
-        && (position_pub.getNumSubscribers() == 0) && (marker_pub.getNumSubscribers() == 0)
-        && (pixel_pub.getNumSubscribers() == 0))
-    {
-      ROS_DEBUG("No subscribers, not looking for ArUco markers");
-      return;
-    }
+    // if ((image_pub.getNumSubscribers() == 0) && (debug_pub.getNumSubscribers() == 0)
+    //     && (pose_pub.getNumSubscribers() == 0) && (transform_pub.getNumSubscribers() == 0)
+    //     && (position_pub.getNumSubscribers() == 0) && (marker_pub.getNumSubscribers() == 0)
+    //     && (pixel_pub.getNumSubscribers() == 0))
+    // {
+    //   ROS_DEBUG("No subscribers, not looking for ArUco markers");
+    //   return;
+    // }
 
-    global.param<bool>("/xdrone_vision/start_detection", start_detection, false);
+    global.getParam("/xdrone_vision/start_detection", start_detection);
+    ROS_WARN_STREAM("receive start detection param" << start_detection);
 
     if(!start_detection){
         return;
@@ -243,9 +246,13 @@ public:
         mDetector.detect(inImage, markers, camParam, marker_size, false);
 
         if(markers.size() == 0)
-            global.setParam("/xdrone_vision/target_detected", false);
+            global.setParam("/xdrone_vision/target_detected", target_detected);
         else
-            global.setParam("/xdrone_vision/target_detected", true);  
+        {
+            target_detected = true;
+            global.setParam("/xdrone_vision/target_detected", target_detected);
+        }
+        ROS_WARN_STREAM("set param target_detected as "<< target_detected);
         
         // for each marker, draw info and its boundaries in the image
         for (std::size_t i = 0; i < markers.size(); ++i)
@@ -290,13 +297,10 @@ public:
                 estimated = filter.correct(state);
             }
 
-            tf::Vector3 trans_estimated(estimated.at<float>(0), estimated.at<float>(1), estimated.at<float>(2));
+            tf::Vector3 trans_estimated(static_cast<double>(estimated.at<float>(0)), static_cast<double>(estimated.at<float>(1)), static_cast<double>(estimated.at<float>(2)));
             tf::Quaternion rot_estimated;
-            rot_estimated.setEuler(estimated.at<float>(3), estimated.at<float>(4), estimated.at<float>(5));
-            tf::Transform estimated_transform;
-            estimated_transform.setOrigin(trans_estimated);
-            estimated_transform.setRotation(rot_estimated);
-
+            rot_estimated.setEuler(static_cast<double>(estimated.at<float>(3)), static_cast<double>(estimated.at<float>(4)), static_cast<double>(estimated.at<float>(5)));
+            tf::Transform estimated_transform(tf::Matrix3x3(rot_estimated), trans_estimated);
             tf::StampedTransform stampedTransform(estimated_transform, curr_stamp, reference_frame, marker_frame);
             br.sendTransform(stampedTransform);
             geometry_msgs::PoseStamped poseMsg;
@@ -353,7 +357,7 @@ public:
 
             tf::Vector3 WorldPlanTrans =  world_currentTF.getOrigin() + plan_targetTF.getOrigin();
             world_currentTF.setOrigin(WorldPlanTrans);
-            world_currentTF.child_frame_id_ = std::string("compensated_target");
+            world_currentTF.child_frame_id_ = std::string("/compensated_target");
             br.sendTransform(world_currentTF);
           }
           // but drawing all the detected markers

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(aruco)
 
-set(OpenCV_DIR /home/peter/software/opencv-3.4.10/build)
+set(OpenCV_DIR /home/tx2/software/opencv-3.4.10/build)
 
 find_package(catkin)
 find_package(Eigen3 REQUIRED)
